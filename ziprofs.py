@@ -26,6 +26,27 @@ except ImportError:
 
 from collections import OrderedDict
 
+########################################################
+### Modify the Zip file names.
+### Here removing the extension ".Zip"
+### for all files Ending with ".d.Zip"
+###
+### All changes are markded with @CG
+########################################################
+_is_foreground=False
+if False: #  This is the default. The Zip-paths are not changed
+    def len_virtual_zippath(path: str): return len(path)
+    def zippath_virtual_to_real(path: str): return path
+    def zippath_virtual_to_real_or_none(path: str, end): return None
+    def zipfilename_real_to_virtual(name: str): return name
+else: # For  Zip files ending with .d.Zip, the extension .Zip is removed.
+    def len_virtual_zippath(path: str): return len(path)-(4 if path.endswith('.d.Zip') else 0)
+    def zippath_virtual_to_real(path: str): return zippath_virtual_to_real_or_none(path,len(path)) or path
+    def zippath_virtual_to_real_or_none(path: str, end):
+        end=min(end,len(path))
+        if end>3 and path.find('.d',end-2,end)>0: return path[:end]+'.Zip'
+        return  None
+    def zipfilename_real_to_virtual(name: str): return name[0:-4] if (name.endswith('.d.Zip')) else name
 
 @lru_cache(maxsize=2048)
 def is_zipfile(path, mtime):
@@ -96,7 +117,7 @@ class ZipROFS(Operations):
         return i
 
     @staticmethod
-    def get_zip_path(path: str) -> Optional[str]:
+    def XXXXXXXXXXXXXXXXXXXXXXXxxget_zip_path(path: str) -> Optional[str]:
         parts = []
         head, tail = os.path.split(path)
         while tail:
@@ -111,15 +132,35 @@ class ZipROFS(Operations):
                 return cur_path
         return None
 
+
+    @staticmethod
+    def get_zip_path(path: str) -> Optional[str]:  # This overrides get_zip_path
+        slash=0
+        l=len(path)
+        while slash<l:
+            slash2=path.find('/',slash+1)
+            if (slash2<0): slash2=l
+            if (slash<slash2-4):
+                cur_path=zippath_virtual_to_real_or_none(path,slash2)
+                if (cur_path or path.find('.zip',slash2-4,slash2)>0 or path.find('.Zip',slash2-4,slash2)>0):
+                    if not cur_path: cur_path=path[:slash2]
+                    if (is_zipfile(cur_path, os.lstat(cur_path).st_mtime)): return cur_path
+            slash=slash2
+        return None
+
+
     def access(self, path, mode):
         if self.get_zip_path(path):
             if mode & os.W_OK:
+                if (_is_foreground): print("FuseOSError(errno.EROFS)")
                 raise FuseOSError(errno.EROFS)
         else:
             if not os.access(path, mode):
+                if (_is_foreground): print("FuseOSError(errno.EROFS)")
                 raise FuseOSError(errno.EACCES)
 
     def getattr(self, path, fh=None):
+        path=zippath_virtual_to_real(path) ## @CG
         zip_path = self.get_zip_path(path)
         st = os.lstat(zip_path) if zip_path else os.lstat(path)
         result = {key: getattr(st, key) for key in (
@@ -129,7 +170,7 @@ class ZipROFS(Operations):
             result['st_mode'] = S_IFDIR | (result['st_mode'] & 0o555)
         elif zip_path:
             zf = self.zip_factory.get(zip_path)
-            subpath = path[len(zip_path) + 1:]
+            subpath = path[len_virtual_zippath(zip_path) + 1:] ## @CG
             info = None
             try:
                 info = zf.getinfo(subpath)
@@ -140,6 +181,7 @@ class ZipROFS(Operations):
                 try:
                     info = zf.getinfo(subpath + '/')
                 except KeyError:
+                    if (_is_foreground): print("KeyError "+path)
                     pass
                 found = False
                 if not info:
@@ -151,6 +193,7 @@ class ZipROFS(Operations):
                 if found or info:
                     result['st_mode'] = S_IFDIR | 0o555
                 else:
+                    if (_is_foreground): print("FuseOSError(errno.ENOENT")
                     raise FuseOSError(errno.ENOENT)
             if info:
                 # update mtime
@@ -162,13 +205,14 @@ class ZipROFS(Operations):
         return result
 
     def open(self, path, flags):
+        path=zippath_virtual_to_real(path) ## @CG
         zip_path = self.get_zip_path(path)
         if zip_path:
             with self._lock:
                 fh = self._get_free_zip_fh()
                 zf = self.zip_factory.get(zip_path)
                 self._zip_zfile_fh[fh] = zf
-                self._zip_file_fh[fh] = zf.open(path[len(zip_path) + 1:])
+                self._zip_file_fh[fh] = zf.open(path[len_virtual_zippath(zip_path) + 1:]) ## @CG
                 return fh
         else:
             fh = os.open(path, flags) << 1
@@ -176,11 +220,13 @@ class ZipROFS(Operations):
             return fh
 
     def read(self, path, size, offset, fh):
+        path=zippath_virtual_to_real(path) ## @CG
         if fh in self._zip_file_fh:
             # should be here (file is first opened, then read)
             f = self._zip_file_fh[fh]
             with self._zip_zfile_fh[fh].lock():
                 if not f.seekable():
+                    if (_is_foreground): print("FuseOSError(errno.EBADF")
                     raise FuseOSError(errno.EBADF)
 
                 f.seek(offset)
@@ -192,13 +238,13 @@ class ZipROFS(Operations):
 
     def readdir(self, path, fh):
         zip_path = self.get_zip_path(path)
+        result = ['.', '..']
         if not zip_path:
-            return ['.', '..'] + os.listdir(path)
-        subpath = path[len(zip_path) + 1:]
+            return result+[zipfilename_real_to_virtual(p) for p in os.listdir(path)] ## @CG
+        subpath = path[len_virtual_zippath(zip_path) + 1:] ## @CG
         zf = self.zip_factory.get(zip_path)
         infolist = zf.infolist()
 
-        result = ['.', '..']
         subdirs = set()
         for info in infolist:
             if info.filename.find(subpath) == 0 and info.filename > subpath:
@@ -314,7 +360,7 @@ if __name__ == '__main__':
         fs = ZipROFSDebug(arg.root)
     else:
         fs = ZipROFS(arg.root)
-
+    _is_foreground=('foreground' in arg.opts) ## @CG
     fuse = ZipROFuse(
         fs,
         arg.mountpoint,
