@@ -4,7 +4,7 @@ from __future__ import print_function, absolute_import, division
 from functools import lru_cache
 
 from os.path import realpath
-
+import traceback
 import argparse
 import ctypes
 import errno
@@ -26,27 +26,44 @@ except ImportError:
 
 from collections import OrderedDict
 
-########################################################
-### Modify the Zip file names.
-### Here removing the extension ".Zip"
-### for all files Ending with ".d.Zip"
+############################################################################
+### Normally, the  the Zip-file paths will be the folder paths.
+### This can be changed here.
 ###
-### All changes are markded with @CG
-########################################################
+### Here we remove the extension ".Zip" for all files Ending with ".d.Zip"
+### The folder names will just end with ".d".
+###
+### You can implement other conversion rules.
+############################################################################
 _is_foreground=False
-if False: #  This is the default. The Zip-paths are not changed
+_keep_name_of_zipfile_as_dirname=False
+if _keep_name_of_zipfile_as_dirname:
     def len_virtual_zippath(path: str): return len(path)
     def zippath_virtual_to_real(path: str): return path
     def zippath_virtual_to_real_or_none(path: str, end): return None
     def zipfilename_real_to_virtual(name: str): return name
-else: # For  Zip files ending with .d.Zip, the extension .Zip is removed.
-    def len_virtual_zippath(path: str): return len(path)-(4 if path.endswith('.d.Zip') else 0)
-    def zippath_virtual_to_real(path: str): return zippath_virtual_to_real_or_none(path,len(path)) or path
+    _skip_ends_with=None
+else: # If ending with .d.Zip, then the folder name is .d.
+    def len_virtual_zippath(path: str):
+        return len(path)-(4 if path.endswith('.d.Zip') else 0)
+    def zippath_virtual_to_real(path: str):
+        p=zippath_virtual_to_real_or_none(path,len(path)) or path
+        #print('\033[42m zippath_virtual_to_real \033[0m '+path+' -> '+p)
+        return p
     def zippath_virtual_to_real_or_none(path: str, end):
         end=min(end,len(path))
-        if end>3 and path.find('.d',end-2,end)>0: return path[:end]+'.Zip'
+        if end>3 and path.find('.d',end-2,end)>0:
+            z=path[:end]+'.Zip'
+            if (os.path.isfile(z)):
+                #print('\033[32m zippath_virtual_to_real_or_none \033[0m '+path+' -> '+z)
+                return z
         return  None
     def zipfilename_real_to_virtual(name: str): return name[0:-4] if (name.endswith('.d.Zip')) else name
+    _skip_ends_with=['/analysis.tdf-journal','/analysis.tdf-wal']
+
+################################
+### End mapping folder names ###
+################################
 
 @lru_cache(maxsize=2048)
 def is_zipfile(path, mtime):
@@ -67,7 +84,6 @@ class CachedZipFactory(object):
     MAX_CACHE_SIZE = 1000
     cache = OrderedDict()
     log = logging.getLogger('ziprofs.cache')
-
     def __init__(self):
         self.__lock = RLock()
 
@@ -77,11 +93,11 @@ class CachedZipFactory(object):
         while len(self.cache) >= self.MAX_CACHE_SIZE:
             oldpath, val = self.cache.popitem(last=False)
             self.log.debug('Popping cache entry: %s', oldpath)
+            #if (_is_foreground): print("val="+str(val[1]))
             val[1].close()
         mtime = os.lstat(path).st_mtime
         self.log.debug("Caching path (%s:%s)", path, mtime)
         self.cache[path] = (mtime, ZipFile(path))
-
     def get(self, path: str) -> ZipFile:
         with self.__lock:
             if path in self.cache:
@@ -98,7 +114,7 @@ class CachedZipFactory(object):
 
 class ZipROFS(Operations):
     zip_factory = CachedZipFactory()
-
+    _count_getattr=0
     def __init__(self, root):
         self.root = realpath(root)
         # odd file handles are files inside zip, even fhs are system-wide files
@@ -117,7 +133,7 @@ class ZipROFS(Operations):
         return i
 
     @staticmethod
-    def XXXXXXXXXXXXXXXXXXXXXXXxxget_zip_path(path: str) -> Optional[str]:
+    def xxxxxxx_get_zip_path(path: str) -> Optional[str]:
         parts = []
         head, tail = os.path.split(path)
         while tail:
@@ -127,14 +143,13 @@ class ZipROFS(Operations):
         cur_path = '/'
         for part in parts:
             cur_path = os.path.join(cur_path, part)
-            if part[-4:] == '.zip' and is_zipfile(cur_path,
-                                                  os.lstat(cur_path).st_mtime):
+            if (part[-4:] == '.zip' or part[-4:] == '.Zip') and is_zipfile(cur_path,os.lstat(cur_path).st_mtime):
                 return cur_path
         return None
 
 
     @staticmethod
-    def get_zip_path(path: str) -> Optional[str]:  # This overrides get_zip_path
+    def get_zip_path(path: str) -> Optional[str]:  # @CG This overrides get_zip_path
         slash=0
         l=len(path)
         while slash<l:
@@ -144,13 +159,15 @@ class ZipROFS(Operations):
                 cur_path=zippath_virtual_to_real_or_none(path,slash2)
                 if (cur_path or path.find('.zip',slash2-4,slash2)>0 or path.find('.Zip',slash2-4,slash2)>0):
                     if not cur_path: cur_path=path[:slash2]
+                    #print("cur_path="+cur_path+"  "+str(is_zipfile(cur_path, os.lstat(cur_path).st_mtime)))
                     if (is_zipfile(cur_path, os.lstat(cur_path).st_mtime)): return cur_path
             slash=slash2
         return None
 
 
     def access(self, path, mode):
-        if self.get_zip_path(path):
+        if (_is_foreground): print("ziprofs#access "+str(path))
+        if ZipROFS.get_zip_path(path): # @CG
             if mode & os.W_OK:
                 if (_is_foreground): print("FuseOSError(errno.EROFS)")
                 raise FuseOSError(errno.EROFS)
@@ -160,8 +177,13 @@ class ZipROFS(Operations):
                 raise FuseOSError(errno.EACCES)
 
     def getattr(self, path, fh=None):
+        self._count_getattr=self._count_getattr+1
+        debug_orig_path=path
         path=zippath_virtual_to_real(path) ## @CG
-        zip_path = self.get_zip_path(path)
+        if (_is_foreground and self._count_getattr%1000==0): print(str(self._count_getattr)+' ziprofs#getattr '+str(path)+"  debug_orig_path="+debug_orig_path)
+        #traceback.print_exc(limit=None, file=None, chain=True)
+        #print('@',end='')
+        zip_path = ZipROFS.get_zip_path(path) ## @CG
         st = os.lstat(zip_path) if zip_path else os.lstat(path)
         result = {key: getattr(st, key) for key in (
             'st_atime', 'st_ctime', 'st_gid', 'st_mode', 'st_mtime', 'st_nlink', 'st_size', 'st_uid'
@@ -181,7 +203,7 @@ class ZipROFS(Operations):
                 try:
                     info = zf.getinfo(subpath + '/')
                 except KeyError:
-                    if (_is_foreground): print("KeyError "+path)
+                    #if (_is_foreground): print("KeyError "+path)
                     pass
                 found = False
                 if not info:
@@ -193,7 +215,7 @@ class ZipROFS(Operations):
                 if found or info:
                     result['st_mode'] = S_IFDIR | 0o555
                 else:
-                    if (_is_foreground): print("FuseOSError(errno.ENOENT")
+#                    if (_is_foreground): print("FuseOSError(errno.ENOENT")
                     raise FuseOSError(errno.ENOENT)
             if info:
                 # update mtime
@@ -206,7 +228,7 @@ class ZipROFS(Operations):
 
     def open(self, path, flags):
         path=zippath_virtual_to_real(path) ## @CG
-        zip_path = self.get_zip_path(path)
+        zip_path = ZipROFS.get_zip_path(path) ## @CG
         if zip_path:
             with self._lock:
                 fh = self._get_free_zip_fh()
@@ -220,6 +242,8 @@ class ZipROFS(Operations):
             return fh
 
     def read(self, path, size, offset, fh):
+        # if (_is_foreground): print('ziprofs#read '+str(path))
+        debug_orig_path=path
         path=zippath_virtual_to_real(path) ## @CG
         if fh in self._zip_file_fh:
             # should be here (file is first opened, then read)
@@ -228,23 +252,26 @@ class ZipROFS(Operations):
                 if not f.seekable():
                     if (_is_foreground): print("FuseOSError(errno.EBADF")
                     raise FuseOSError(errno.EBADF)
-
                 f.seek(offset)
-                return f.read(size)
+                try:
+                    return f.read(size)
+                except EOFError:
+                    if (_is_foreground): print("EXCEPT EOFError path="+path+" debug_orig_path="+debug_orig_path)
+                    exit(999)
+                    return None
         else:
             with self._fh_locks[fh]:
                 os.lseek(fh >> 1, offset, 0)
                 return os.read(fh >> 1, size)
 
     def readdir(self, path, fh):
-        zip_path = self.get_zip_path(path)
+        zip_path = ZipROFS.get_zip_path(path) ## @CG
         result = ['.', '..']
         if not zip_path:
             return result+[zipfilename_real_to_virtual(p) for p in os.listdir(path)] ## @CG
         subpath = path[len_virtual_zippath(zip_path) + 1:] ## @CG
         zf = self.zip_factory.get(zip_path)
         infolist = zf.infolist()
-
         subdirs = set()
         for info in infolist:
             if info.filename.find(subpath) == 0 and info.filename > subpath:
@@ -368,3 +395,34 @@ if __name__ == '__main__':
         allow_other=('allowother' in arg.opts),
         support_async=('async' in arg.opts)
     )
+
+
+
+#     Traceback (most recent call last):
+#   File "/local/filesystem/git/ZipROFS/fuse.py", line 734, in _wrapper
+#     return func(*args, **kwargs) or 0
+#            ^^^^^^^^^^^^^^^^^^^^^
+#   File "/local/filesystem/git/ZipROFS/fuse.py", line 847, in read
+#     ret = self.operations('read', self._decode_optional_path(path), size, offset, fh)
+#           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+#   File "/local/filesystem/git/ZipROFS/ziprofs.py", line 110, in __call__
+#     return super().__call__(op, self.root + path, *args)
+#            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+#   File "/local/filesystem/git/ZipROFS/fuse.py", line 1077, in __call__
+#     return getattr(self, op)(*args)
+#            ^^^^^^^^^^^^^^^^^^^^^^^^
+#   File "/local/filesystem/git/ZipROFS/ziprofs.py", line 233, in read
+#     return f.read(size)
+#            ^^^^^^^^^^^^
+#   File "/local/python/2023_02_cpython-main/Lib/zipfile/__init__.py", line 948, in read
+#     data = self._read1(n)
+#            ^^^^^^^^^^^^^^
+#   File "/local/python/2023_02_cpython-main/Lib/zipfile/__init__.py", line 1018, in _read1
+#     data = self._read2(n)
+#            ^^^^^^^^^^^^^^
+#   File "/local/python/2023_02_cpython-main/Lib/zipfile/__init__.py", line 1051, in _read2
+#     raise EOFError
+# EOFError
+# ERROR:fuse:Uncaught exception from FUSE operation read, returning errno.EINVAL.
+# Traceback (most recent call last):
+#   File "/local/filesystem/git/ZipROFS/fuse.py", line 734, in _wrapper
