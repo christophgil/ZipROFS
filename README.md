@@ -1,7 +1,7 @@
 # ZipROFS
 [![Build Status](https://travis-ci.com/openscopeproject/ZipROFS.svg?branch=dev)](https://travis-ci.com/openscopeproject/ZipROFS)
 
-ZipROFS is a FUSE filesystem that acts as pass through to another FS except it
+ZipROFS is a FUSE file-system that acts as pass through to another FS except it
 expands zip files like folders and allows direct transparent access to the contents.
 
 We created a branch of ZipROFS to adopt it for the needs of  mass spectrometry software.
@@ -47,11 +47,12 @@ A current problem is that computation is slowed down with ZipROFS compared to co
 
 The reason lies within the closed source shared library <i>timsdata.dll</i>.  Reading proprietary
 mass spectrometry files with this library creates a huge amount of file system requests.
-Furthermore file reading is not sequential.
+These many requests have to pass the user-space-kernel boundary.
+Another reason for reduced performance is that file reading is not sequential.
 
 To solve the performance problem, we
 
- - Reimplement ZipROFS using the language C [ZIPsFS](https://github.com/christophgil/ZIPsFS).
+ - Re-implement ZipROFS using the language C: [ZIPsFS](https://github.com/christophgil/ZIPsFS).
 
  - Catching  calls to the file API using the <i>LD_PRELOAD</i> technique.
    Filtering the calls and implementing a cache for directory listings: [cache_readdir_stat](https://github.com/christophgil/cache_readdir_stat)
