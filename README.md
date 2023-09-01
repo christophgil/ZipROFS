@@ -20,12 +20,12 @@ Our mass spectrometry records are stored in ZIP files:
  </PRE>
  </DIV>
 
-With the original version of ZIPsFS we would see folders ending with <i>.d.Zip</i>.
+With the original version of ZipROFS we would see folders ending with <i>.d.Zip</i>.
 However, the software requires folders ending with <i>.d</i> like this:
 
 
  <DIV style="padding:1em;border:2px solid gray;float:right;">
-             Virtual file tree presented by ZIPsFS:
+             Virtual file tree presented by ZipROFS:
              <PRE style="font-family: monospace,courier,ariel,sans-serif;">
  ├── <B style="color:#1111FF;">brukertimstof</B>
  │   └── <B style="color:#1111FF;">202302</B>
@@ -43,9 +43,17 @@ However, the software requires folders ending with <i>.d</i> like this:
  </DIV>
 
 
+A current problem is that computation is slowed down with ZipROFS compared to conventional file systems.
 
+The reason lies within the closed source shared library <i>timsdata.dll</i>.  Reading proprietary
+mass spectrometry files with this library creates a huge amount of file system requests.
+Furthermore file reading is not sequential.
 
+To solve the performance problem, we
 
+ - Reimplement ZipROFS using the language C [ZIPsFS](https://github.com/christophgil/ZIPsFS).
+
+ - Catch calls to the file API using the LD_PRELOAD method: [cache_readdir_stat](https://github.com/christophgil/cache_readdir_stat)
 
 
 ### Dependencies
@@ -55,15 +63,6 @@ However, the software requires folders ending with <i>.d</i> like this:
 ### Limitations
 * Read only
 * Nested zip files are not expanded, they are still just files
-
-
-
-
-
-
-
-
-
 
 
 ### Example usage
