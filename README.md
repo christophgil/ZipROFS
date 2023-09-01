@@ -4,7 +4,7 @@
 ZipROFS is a FUSE filesystem that acts as pass through to another FS except it
 expands zip files like folders and allows direct transparent access to the contents.
 
-We modified ZipROFS according to the needs of brukertimstof mass spectrometry files.
+We created a branch of ZipROFS to adopt it for the needs of  mass spectrometry software.
 Our mass spectrometry records are stored in ZIP files:
 
  <DIV style="padding:1em;border:2px solid gray;float:left;">
@@ -53,7 +53,8 @@ To solve the performance problem, we
 
  - Reimplement ZipROFS using the language C [ZIPsFS](https://github.com/christophgil/ZIPsFS).
 
- - Catch calls to the file API using the LD_PRELOAD method: [cache_readdir_stat](https://github.com/christophgil/cache_readdir_stat)
+ - Catching  calls to the file API using the <i>LD_PRELOAD</i> technique.
+   Filtering the calls and implementing a cache for directory listings: [cache_readdir_stat](https://github.com/christophgil/cache_readdir_stat)
 
 
 ### Dependencies
