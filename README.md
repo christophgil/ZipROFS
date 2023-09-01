@@ -17,7 +17,7 @@ To mount run ziprofs.py:
 ```shell
 $ ./ziprofs.py ~/root ~/mount -o allowother,cachesize=2048
 ```
-
+xxx
 Example results:
 ```shell
 $ tree root

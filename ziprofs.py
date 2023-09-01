@@ -13,6 +13,7 @@ import os
 import time
 import zipfile
 import stat
+import threading
 from threading import RLock
 from typing import Optional, Dict
 
@@ -166,7 +167,7 @@ class ZipROFS(Operations):
 
 
     def access(self, path, mode):
-        if (_is_foreground): print("ziprofs#access "+str(path))
+        #if (_is_foreground): print("ziprofs#access "+str(path))
         if ZipROFS.get_zip_path(path): # @CG
             if mode & os.W_OK:
                 if (_is_foreground): print("FuseOSError(errno.EROFS)")
@@ -180,6 +181,7 @@ class ZipROFS(Operations):
         self._count_getattr=self._count_getattr+1
         debug_orig_path=path
         path=zippath_virtual_to_real(path) ## @CG
+
         if (_is_foreground and self._count_getattr%1000==0): print(str(self._count_getattr)+' ziprofs#getattr '+str(path)+"  debug_orig_path="+debug_orig_path)
         #traceback.print_exc(limit=None, file=None, chain=True)
         #print('@',end='')
@@ -240,7 +242,8 @@ class ZipROFS(Operations):
             fh = os.open(path, flags) << 1
             self._fh_locks[fh] = RLock()
             return fh
-
+    _my_offset=0
+    _thread_ident=''
     def read(self, path, size, offset, fh):
         # if (_is_foreground): print('ziprofs#read '+str(path))
         debug_orig_path=path
@@ -253,10 +256,17 @@ class ZipROFS(Operations):
                     if (_is_foreground): print("FuseOSError(errno.EBADF")
                     raise FuseOSError(errno.EBADF)
                 f.seek(offset)
+
                 try:
-                    return f.read(size)
+
+                    r=f.read(size)
+                    if (self._thread_ident==''): self._thread_ident=str(threading.get_ident());
+                    if (path.endswith('tdf_bin') and self._thread_ident==str(threading.get_ident())): # and offset!=self._my_offset):
+                        print(str(threading.get_ident())+"  "+path+" size="+str(size)+" r="+str(len(r))+" offset="+str(offset)+" _my_offset="+str(self._my_offset)+"   skip="+str(offset-self._my_offset)+"\n");
+                        self._my_offset=offset+len(r)
+                    return r
                 except EOFError:
-                    if (_is_foreground): print("EXCEPT EOFError path="+path+" debug_orig_path="+debug_orig_path)
+                    if (_is_foreground): print("EXCEPT EOFError path="+path+" debug_orig_path="+debug_orig_path+" size="+str(size)+"  offset="+str(offset))
                     exit(999)
                     return None
         else:
