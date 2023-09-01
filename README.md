@@ -8,7 +8,7 @@ We created a branch of ZipROFS to adopt it for the needs of  mass spectrometry s
 Our mass spectrometry records are stored in ZIP files:
 
  <DIV style="padding:1em;border:2px solid gray;float:left;">
-                     File tree with zip files on hard disk:
+                     File tree with zip files on NAS server:
        <PRE style="font-family: monospace,courier,ariel,sans-serif;">
  ├── <B style="color:#1111FF;">brukertimstof</B>
  │   └── <B style="color:#1111FF;">202302</B>
