@@ -1,8 +1,52 @@
 # ZipROFS
 [![Build Status](https://travis-ci.com/openscopeproject/ZipROFS.svg?branch=dev)](https://travis-ci.com/openscopeproject/ZipROFS)
 
-This is a FUSE filesystem that acts as pass through to another FS except it
+ZipROFS is a FUSE filesystem that acts as pass through to another FS except it
 expands zip files like folders and allows direct transparent access to the contents.
+
+We modified ZipROFS according to the needs of brukertimstof mass spectrometry files.
+Our mass spectrometry records are stored in ZIP files:
+
+ <DIV style="padding:1em;border:2px solid gray;float:left;">
+                     File tree with zip files on hard disk:
+       <PRE style="font-family: monospace,courier,ariel,sans-serif;">
+ ├── <B style="color:#1111FF;">brukertimstof</B>
+ │   └── <B style="color:#1111FF;">202302</B>
+ │       ├── 20230209_hsapiens_Sample_001.d.Zip
+ │       ├── 20230209_hsapiens_Sample_002.d.Zip
+ │       └── 20230209_hsapiens_Sample_003.d.Zip
+
+ ...
+ </PRE>
+ </DIV>
+
+With the original version of ZIPsFS we would see folders ending with <i>.d.Zip</i>.
+However, the software requires folders ending with <i>.d</i> like this:
+
+
+ <DIV style="padding:1em;border:2px solid gray;float:right;">
+             Virtual file tree presented by ZIPsFS:
+             <PRE style="font-family: monospace,courier,ariel,sans-serif;">
+ ├── <B style="color:#1111FF;">brukertimstof</B>
+ │   └── <B style="color:#1111FF;">202302</B>
+ │       ├── <B style="color:#1111FF;">20230209_hsapiens_Sample_001.d</B>
+ │       │   ├── analysis.tdf
+ │       │   └── analysis.tdf_bin
+ │       ├── <B style="color:#1111FF;">20230209_hsapiens_Sample_002.d</B>
+ │       │   ├── analysis.tdf
+ │       │   └── analysis.tdf_bin
+ │       └── <B style="color:#1111FF;">20230209_hsapiens_Sample_003.d</B>
+ │           ├── analysis.tdf
+ │           └── analysis.tdf_bin
+
+ </PRE>
+ </DIV>
+
+
+
+
+
+
 
 ### Dependencies
 * FUSE
@@ -12,12 +56,22 @@ expands zip files like folders and allows direct transparent access to the conte
 * Read only
 * Nested zip files are not expanded, they are still just files
 
+
+
+
+
+
+
+
+
+
+
 ### Example usage
 To mount run ziprofs.py:
 ```shell
 $ ./ziprofs.py ~/root ~/mount -o allowother,cachesize=2048
 ```
-xxx
+
 Example results:
 ```shell
 $ tree root
